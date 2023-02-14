@@ -1,0 +1,27 @@
+apiVersion: v2
+appVersion: 3.1.1
+description: CouchDB instance for Hyperledger Fabric (these charts are forked from
+  the one by AID:Tech and are currently not directly associated with them or Hyperledger
+  project)
+home: http://hyperledger-fabric.readthedocs.io
+icon: https://www.hyperledger.org/wp-content/uploads/2018/04/fabric-logo.png
+keywords:
+- blockchain
+- hyperledger
+- fabric
+- couchdb
+kubeVersion: '>= 1.19.0-0'
+maintainers:
+- email: alexandre.picosson@owkin.com
+  name: AlexandrePicosson
+- email: aurelien.gasser@owkin.com
+  name: AurelienGasser
+- email: inalgnu@ulipse.com
+  name: inalgnu
+- email: kelvin.moutet@owkin.com
+  name: Kelvin-M
+name: hlf-couchdb
+sources:
+- https://github.com/hyperledger/fabric
+type: application
+version: 2.1.0

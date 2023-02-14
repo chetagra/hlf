@@ -1,0 +1,9 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  namespace: certs-rotation
+  name: certs-rotation-role
+rules:
+- apiGroups: ["","apps"]
+  resources: ["configmaps","deployments","ingress","persistentvolumeclaims","secrets","services","pods","pods/exec","namespaces"]
+  verbs: ["list","create","delete","get","patch"]

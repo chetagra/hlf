@@ -1,0 +1,17 @@
+--- #---------------- Chaincode Service ---------------------
+apiVersion: v1
+kind: Service
+metadata:
+  name: chaincode-marbles-org1
+  namespace: blockchain-org1
+  labels:
+    app: chaincode-marbles-org1
+spec:
+  type: NodePort
+  ports:
+    - name: grpc
+      port: 7052
+      targetPort: 7052
+      nodePort: 30007
+  selector:
+    app: chaincode-marbles-org1

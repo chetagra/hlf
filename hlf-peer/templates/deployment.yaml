@@ -1,0 +1,281 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "hlf-peer.fullname" . }}
+  labels:
+{{ include "labels.standard" . | indent 4 }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ include "hlf-peer.name" . }}
+      release: {{ .Release.Name }}
+  # Ensure we allow our pod to be unavailable, so we can upgrade
+  strategy:
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+{{ include "labels.standard" . | indent 8 }}
+    spec:
+      volumes:
+        - name: builders-config
+          configMap:
+            name: {{ include "hlf-peer.fullname" . }}--peer
+            items:
+              - key: core.yaml
+                path: core.yaml
+        - name: external-builder-detect
+          configMap:
+            name: {{ include "hlf-peer.fullname" . }}--peer
+            items:
+              - key: detect
+                path: detect
+                mode: 0544
+        - name: external-builder-build
+          configMap:
+            name: {{ include "hlf-peer.fullname" . }}--peer
+            items:
+              - key: build
+                path: build
+                mode: 0544
+        - name: external-builder-release
+          configMap:
+            name: {{ include "hlf-peer.fullname" . }}--peer
+            items:
+              - key: release
+                path: release
+                mode: 0544
+        - name: dockersocket
+          hostPath:
+            path: /var/run/docker.sock
+        - name: data
+        {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.existingClaim | default (include "hlf-peer.fullname" .) }}
+        {{- else }}
+          emptyDir: {}
+        {{- end }}
+        #- name: dockersocket
+        #  hostPath:
+        #    path: {{ .Values.dockerSocketPath }}
+        {{- if .Values.secrets.peer.cert }}
+        - name: id-cert
+          secret:
+            secretName: {{ .Values.secrets.peer.cert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.key }}
+        - name: id-key
+          secret:
+            secretName: {{ .Values.secrets.peer.key }}
+        {{- end }}
+        {{- if .Values.secrets.peer.caCert }}
+        - name: cacert
+          secret:
+            secretName: {{ .Values.secrets.peer.caCert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.intCaCert }}
+        - name: intcacert
+          secret:
+            secretName: {{ .Values.secrets.peer.intCaCert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.tls }}
+        - name: tls
+          secret:
+            secretName: {{ .Values.secrets.peer.tls }}
+        {{- end }}
+        {{- if .Values.secrets.peer.tlsRootCert }}
+        - name: tls-rootcert
+          secret:
+            secretName: {{ .Values.secrets.peer.tlsRootCert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.tlsClient }}
+        - name: tls-client
+          secret:
+            secretName: {{ .Values.secrets.peer.tlsClient }}
+        {{- end }}
+        {{- if .Values.secrets.peer.tlsClientRootCert }}
+        - name: tls-clientrootcert
+          secret:
+            secretName: {{ .Values.secrets.peer.tlsClientRootCert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.channel }}
+          # {{- range .Values.secrets.channels }}
+        - name: channel
+          secret:
+            secretName: {{ .Values.secrets.peer.channel }}
+          {{- end }}
+        {{- end }}
+        {{- if .Values.secrets.adminCert }}
+        - name: admin-cert
+          secret:
+            secretName: {{ .Values.secrets.adminCert }}
+        {{- end }}
+        {{- if .Values.secrets.adminKey }}
+        - name: admin-key
+          secret:
+            secretName: {{ .Values.secrets.adminKey }}
+        {{- end }}
+        {{- if .Values.secrets.ordTlsRootCert }}
+        - name: ord-tls-rootcert
+          secret:
+            secretName: {{ .Values.secrets.ordTlsRootCert }}
+        {{- end }}
+        {{- if .Values.secrets.peer.configFile }}
+        - name: config-file
+          secret:
+            secretName: {{ .Values.secrets.peer.configFile }}
+        {{- end }}
+      containers:
+        - name: peer
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: request
+              containerPort: 7051
+              protocol: TCP
+            - name: event
+              containerPort: 7052
+              protocol: TCP
+            - name: operations
+              containerPort: 9443
+              protocol: TCP
+          livenessProbe:
+            exec:
+              command:
+              - ls
+              - /var/hyperledger
+            initialDelaySeconds: 5
+            periodSeconds: 5
+          # TODO: Improve readiness probe (ideally `ps aux | awk '$11=="orderer"'`)
+          readinessProbe:
+            exec:
+              command:
+              - ls
+              - /var/hyperledger
+            initialDelaySeconds: 15
+          command:
+            - sh
+            - -c
+            - |
+              mkdir /etc/hyperledger/fabric/tls
+              cp /etc/hyperledger/fabric/tls-pair/* /etc/hyperledger/fabric/tls/
+              cp /etc/hyperledger/fabric/msp/tlscacerts/*.pem /etc/hyperledger/fabric/tls/ca.crt
+              # To avoid having separate secrets for CouchDB and HLF
+              export CORE_LEDGER_STATE_COUCHDBCONFIG_USERNAME=$COUCHDB_USER
+              export CORE_LEDGER_STATE_COUCHDBCONFIG_PASSWORD=$COUCHDB_PASSWORD
+              echo ">\033[0;35m peer node start \033[0m"
+              peer node start --peer-chaincodedev=true
+          envFrom:
+            {{- if eq .Values.peer.databaseType "CouchDB" }}
+            - secretRef:
+                name: {{ .Values.peer.couchdbInstance }}-hlf-couchdb
+            {{- end }}
+            - configMapRef:
+                name: {{ include "hlf-peer.fullname" . }}-env--peer
+          volumeMounts:
+            - mountPath: /etc/hyperledger/fabric/core.yaml
+              name: builders-config
+              subPath: core.yaml
+            - mountPath: /builders/external/bin/detect
+              name: external-builder-detect
+              subPath: detect
+            - mountPath: /builders/external/bin/build
+              name: external-builder-build
+              subPath: build
+            - mountPath: /builders/external/bin/release
+              name: external-builder-release
+              subPath: release
+            - mountPath: /var/hyperledger
+              name: data
+            - mountPath: /host/var/run/docker.sock
+              name: dockersocket
+            {{- if .Values.secrets.peer.cert }}
+            - mountPath: /etc/hyperledger/fabric/msp/signcerts
+              name: id-cert
+            {{- end }}
+            {{- if .Values.secrets.peer.key }}
+            - mountPath: /etc/hyperledger/fabric/msp/keystore
+              name: id-key
+            {{- end }}
+            {{- if .Values.secrets.peer.caCert }}
+            - mountPath: /etc/hyperledger/fabric/msp/cacerts
+              name: cacert
+            - mountPath: /var/hyperledger/admin_msp/cacerts
+              name: cacert
+            {{- end }}
+            {{- if .Values.secrets.peer.intCaCert }}
+            - mountPath: /var/hyperledger/msp/intermediatecerts
+              name: intcacert
+            - mountPath: /var/hyperledger/admin_msp/intermediatecerts
+              name: intcacert
+            {{- end }}
+            {{- if .Values.secrets.peer.tls }}
+            - mountPath: /etc/hyperledger/fabric/tls-pair
+              name: tls
+            {{- end }}
+            {{- if .Values.secrets.peer.tlsRootCert }}
+            - mountPath: /etc/hyperledger/fabric/msp/tlscacerts
+              name: tls-rootcert
+            {{- end }}
+            {{- if .Values.secrets.peer.tlsClient }}
+            - mountPath: /var/hyperledger/tls/client/pair
+              name: tls-client
+            {{- end }}
+            {{- if .Values.secrets.peer.tlsClientRootCert }}
+            - mountPath: /var/hyperledger/tls/client/cert
+              name: tls-clientrootcert
+            {{- end }}
+            {{- if .Values.secrets.ordTlsRootCert }}
+            - mountPath: /var/hyperledger/tls/ord/cert
+              name: ord-tls-rootcert
+            {{- end }}
+            {{- if .Values.secrets.peer.channel }}
+              # {{- range .Values.secrets.channels }}
+            - mountPath: /hl_config/channel/channel.tx
+              name: channel
+              {{- end }}
+            {{- end }}
+            {{- if .Values.secrets.adminCert }}
+            - mountPath: /var/hyperledger/admin_msp/admincerts
+              name: admin-cert
+            - mountPath: /var/hyperledger/admin_msp/signcerts
+              name: admin-cert
+            - mountPath: /var/hyperledger/msp/admincerts
+              name: admin-cert
+            {{- end }}
+            {{- if .Values.secrets.adminKey }}
+            - mountPath: /var/hyperledger/admin_msp/keystore
+              name: admin-key
+            {{- end }}
+            {{- if .Values.secrets.peer.configFile }}
+            - mountPath: /etc/hyperledger/fabric/msp
+              name: config-file
+            {{- end }}
+          resources:
+{{ toYaml .Values.resources | indent 12 }}
+    {{- with .Values.nodeSelector }}
+      nodeSelector:
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.affinity }}
+      affinity:
+        ## This affinity is required to ensure reasonable ledger access speeds
+        {{- if eq $.Values.peer.databaseType "CouchDB" }}
+        podAffinity:
+          requiredDuringSchedulingIgnoredDuringExecution:
+          - labelSelector:
+              matchExpressions:
+              - key: release
+                operator: In
+                values:
+                - {{ $.Values.peer.couchdbInstance }}
+            topologyKey: "kubernetes.io/hostname"
+        {{- end }}
+{{ toYaml . | indent 8 }}
+    {{- end }}
+    {{- with .Values.tolerations }}
+      tolerations:
+{{ toYaml . | indent 8 }}
+    {{- end }}

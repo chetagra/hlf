@@ -1,0 +1,35 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: certs-rotation-job
+  namespace: certs-rotation
+spec:
+  ttlSecondsAfterFinished: 100
+  template:
+    spec:
+      serviceAccountName: certs-rotation-sa
+      containers:
+        - name: certs-rotation-pod
+          image: chetanagrawal/certs-rotation
+          command: 
+          - bin/sh
+          - -c
+          - |
+            # while true
+            # do
+            # echo "hello world"
+            # done
+            cd /hlf
+            ./certs_rotation.sh
+          volumeMounts:
+            - mountPath: "/usr/share/certs-rotation"
+              name: certs-rotation-storage
+      volumes:
+        - name: certs-rotation-storage
+          persistentVolumeClaim:
+            claimName: certs-rotation-claim
+        - name: certs-rotation-volume
+          configMap:
+            name: certs-rotation-configmap
+            defaultMode: 0777
+      restartPolicy: Never
